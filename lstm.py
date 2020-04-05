@@ -11,12 +11,12 @@ from torch.autograd import *
 import numpy as np
 
 import sys
-sys.path.append('./tools')
+sys.path.append('../tools')
 import parse, py_op
 
 output_size = 1
 
-def value_embedding_data(d = 512, split = 200):
+def value_embedding_data(d = 200, split = 200):
     vec = np.array([np.arange(split) * i for i in range(int(d/2))], dtype=np.float32).transpose()
     vec = vec / vec.max() 
     embedding = np.concatenate((np.sin(vec), np.cos(vec)), 1)
@@ -27,9 +27,6 @@ def value_embedding_data(d = 512, split = 200):
 class LSTM(nn.Module):
     def __init__(self, args):
         super(LSTM, self).__init__()
-        args.use_unstructure = 0
-        args.value_embedding = 'use_order'
-        args.vocab_size = args.input_size + 2
         self.args = args
 
         # unstructure
@@ -44,8 +41,8 @@ class LSTM(nn.Module):
             self.vocab_mapping = nn.Sequential(
                     nn.Linear(args.embed_size * 2, args.embed_size),
                     nn.ReLU ( ),
-                    # nn.Dropout ( 0.1),
-                    # nn.Linear(args.embed_size, args.embed_size),
+                    nn.Dropout ( 0.1),
+                    nn.Linear(args.embed_size, args.embed_size),
                     )
             self.cat_output = nn.Sequential (
                     nn.Linear (args.rnn_size * 3, args.rnn_size),
@@ -56,14 +53,19 @@ class LSTM(nn.Module):
             self.cat_output = nn.Sequential (
                     nn.ReLU ( ),
                     nn.Dropout ( 0.1),
-                    nn.Linear (args.rnn_size * 3, 1),
+                    nn.Linear (args.rnn_size * 3, output_size),
                     )
 
         if args.value_embedding == 'no':
             self.embedding = nn.Linear(args.input_size, args.embed_size)
         else:
             self.embedding = nn.Embedding (args.vocab_size, args.embed_size )
-        self.lstm = nn.LSTM ( input_size=args.embed_size,
+        self.lstm1 = nn.LSTM ( input_size=args.embed_size,
+                              hidden_size=args.hidden_size,
+                              num_layers=args.num_layers,
+                              batch_first=True,
+                              bidirectional=True)
+        self.lstm2 = nn.LSTM ( input_size=args.embed_size,
                               hidden_size=args.hidden_size,
                               num_layers=args.num_layers,
                               batch_first=True,
@@ -128,30 +130,29 @@ class LSTM(nn.Module):
     def visit_pooling(self, x):
         output = x
         size = output.size()
-        output = output.view(size[0] * size[1], size[2], output.size(3))    # (64*30, 13, 512)
-        output = torch.transpose(output, 1,2).contiguous()                  # (64*30, 512, 13)
-        output = self.pooling(output)                                       # (64*30, 512, 1)
-        output = output.view(size[0], size[1], size[3])                     # (64, 30, 512)
+        output = output.view(size[0] * size[1], size[2], output.size(3))    # (64*30, 13, 200)
+        output = torch.transpose(output, 1,2).contiguous()                  # (64*30, 200, 13)
+        output = self.pooling(output)                                       # (64*30, 200, 1)
+        output = output.view(size[0], size[1], size[3])                     # (64, 30, 200)
         return output
 
     def value_order_embedding(self, x):
         size = list(x[0].size())               # (64, 30, 13)
         index, value = x
-        xi = self.embedding(index.view(-1))          # (64*30*13, 512)
+        xi = self.embedding(index.view(-1))          # (64*30*13, 200)
         # xi = xi * (value.view(-1).float() + 1.0 / self.args.split_num)
-        xv = self.value_embedding(value.view(-1))    # (64*30*13, 512)
+        xv = self.value_embedding(value.view(-1))    # (64*30*13, 200)
         x = torch.cat((xi, xv), 1)                   # (64*30*13, 1024)
-        x = self.value_mapping(x)                    # (64*30*13, 512)   
+        x = self.value_mapping(x)                    # (64*30*13, 200)   
         size.append(-1)
-        x = x.view(size)                    # (64, 30, 13, 512)
+        x = x.view(size)                    # (64, 30, 13, 200)
         return x
 
 
     def forward(self, x, t, dd, content=None):
 
         if 0 and content is not None:
-            content = self.vocab_embedding(content)
-            content, _ = self.lstm(content)
+            content, _ = self.lstm1(content)
             content = self.vocab_mapping(content)
             content = torch.transpose(content, 1, 2).contiguous()
             content = self.pooling(content)
@@ -166,7 +167,7 @@ class LSTM(nn.Module):
         dsize = list(dd.size()) + [-1]
         d = self.dd_embedding(dd.view(-1)).view(dsize)
         d = self.dd_mapping(d)
-        d = torch.transpose(d, 1,2).contiguous()                  # (64*30, 512, 100)
+        d = torch.transpose(d, 1,2).contiguous()                  # (64*30, 200, 100)
         d = self.pooling(d)
         d = d.view((d.size(0), -1))
 
@@ -178,19 +179,18 @@ class LSTM(nn.Module):
         # x = self.tv_mapping(torch.cat((x, t), 2))
 
         # lstm
-        lstm_out, _ = self.lstm( x )            # (64, 30, 1024)
+        lstm_out, _ = self.lstm2( x )            # (64, 30, 1024)
         output = self.output_mapping(lstm_out)
-        output = torch.transpose(output, 1,2).contiguous()                  # (64*30, 512, 100)
+        output = torch.transpose(output, 1,2).contiguous()                  # (64*30, 200, 100)
         # print('ouput.size', output.size())
-        output = self.pooling(output)                                       # (64*30, 512, 1)
+        output = self.pooling(output)                                       # (64*30, 200, 1)
         output = output.view((output.size(0), -1))
         out = self.output(torch.cat((output, d), 1))
 
         # unstructure
-        if 0 and content is not None:
+        if content is not None:
             # print(content.size())   # [64, 1000]
-            content = self.vocab_embedding(content)
-            content, _ = self.lstm(content)
+            content, _ = self.lstm1(content)
             content = self.vocab_mapping(content)
             content = torch.transpose(content, 1, 2).contiguous()
             content = self.pooling(content)

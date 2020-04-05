@@ -1,19 +1,14 @@
-#!/usr/bin/env python
-# coding=utf-8
-import pandas as pd
-
-import sys
+import numpy as np
+from tqdm import tqdm
+from sklearn import metrics
 
 import os
 import sys
 import time
-import numpy as np
-from sklearn import metrics
 import random
 import json
 from glob import glob
 from collections import OrderedDict
-from tqdm import tqdm
 
 sys.path.append('./tools')
 import parse, py_op
@@ -26,10 +21,9 @@ py_op.mkdir(args.lab_test_initial_dir)
 py_op.mkdir(args.lab_test_resample_dir)
 py_op.mkdir(args.lab_test_file_dir)
 py_op.mkdir(args.lab_test_result_dir)
-data_csv = os.path.join(args.lab_test_data_dir, 'features.csv')
+features_csv = os.path.join(args.lab_test_data_dir, 'features.csv')
 label_csv = os.path.join(args.lab_test_data_dir, 'mortality.csv')
 demo_csv = os.path.join(args.lab_test_data_dir, 'demo.csv')
-note_csv = os.path.join(args.lab_test_data_dir, 'earlynotes.csv')
 selected_indices = []
 
 def time_to_second(t):
@@ -56,7 +50,7 @@ def generate_file_for_each_patient():
     os.system('rm -r ' + initial_dir)
     py_op.mkdir(initial_dir)
     label_dict = py_op.myreadjson(os.path.join(args.lab_test_file_dir, 'label_dict.json'))
-    for i_line, line in enumerate(open(data_csv)):
+    for i_line, line in enumerate(open(features_csv)):
         if i_line % 10000 == 0:
             print( i_line)
         if i_line:
@@ -249,56 +243,15 @@ def generate_demo_dict():
     py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'demo_dict.json'), demo_dict)
     py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'demo_index_dict.json'), demo_index_dict)
 
-def generate_unstructure_dict():
-    unstructure_dict = dict()
-    vocab_dict = dict()
-    for i_line, line in enumerate(open(note_csv)):
-        if i_line:
-            data = line.strip().split(',')
-            pid = data[0]
-            content = ','.join(data[2:])
-            for c in '*,"\':()?/#.':
-                content = content.replace(c, '')
-            content = content.strip().split()
-            unstructure_dict[pid] = content
-            for w in content:
-                vocab_dict[w] = vocab_dict.get(w, 0) + 1
-        if i_line % 1000 == 0:
-            print(i_line)
-    vocab_list = [''] + [v for v,c in vocab_dict.items() if c > 50]
-    print('There are {:d}/{:d} vocabs.'.format(len(vocab_list), len(vocab_dict)))
-    vocab_idx = { v:i for i,v in enumerate(vocab_list) }
-    for pid, content in unstructure_dict.items():
-        idx = []
-        for v in content:
-            if v in vocab_idx:
-                idx.append(vocab_idx[v])
-        unstructure_dict[pid] = idx
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'unstructure_dict.json'), unstructure_dict)
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'vocab_list.json'), vocab_list)
-
-
-def generate_note_dict():
-    note_dict = dict()
-    df_notes = pd.read_csv(note_csv)
-    df_notes['hadm_id'] = df_notes['hadm_id'].astype(int)
-    s_notes = df_notes.groupby('hadm_id')['text'].apply(list)
-    with open('./data/processed/files/notes_dict.json', 'w') as f:
-        f.write(s_notes.to_json())
-
-
-def main():
-    # generate_note_dict()
+def preprocess():
     generate_label_dict()
-    # generate_demo_dict()
-
-    # generate_file_for_each_patient()
-    # resample_lab_test_data()
-    # generate_feature_mm_dict()
-    # split_data_to_ten_set()
-
+    generate_demo_dict()
+    generate_file_for_each_patient()
+    resample_lab_test_data()
+    generate_feature_mm_dict()
+    split_data_to_ten_set()
+    pass
 
 
 if __name__ == '__main__':
-    main()
-
+    preprocess()

@@ -1,7 +1,3 @@
-python baselines.py --inputs 3 --task labels_icd
-python baselines.py --inputs 4 --task labels_icd
-python baselines.py --inputs 7 --task labels_icd
-
 python baselines.py --inputs 3 --task mortality
 python baselines.py --inputs 4 --task mortality
 python baselines.py --inputs 7 --task mortality

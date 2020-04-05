@@ -1,5 +1,8 @@
 .vscode
-data
+data/**/*.csv
+data/**/*.json
 __pycache__
 result
-models
+models/*.pth
+models/*.model
+models/*.npy

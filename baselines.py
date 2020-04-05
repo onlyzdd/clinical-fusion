@@ -13,17 +13,16 @@ import os
 import time
 import warnings
 
-from utils import balance_samples, cal_metric, get_ids, text2words
+from utils import cal_metric, get_ids, text2words
 
 warnings.filterwarnings('ignore')
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task', type=str, default='mortality')
-    parser.add_argument('--model', type=str, default='all')
-    parser.add_argument('--balance', type=int, default=3) # 0 means imbalanced
-    parser.add_argument('--inputs', type=int, default=4) # 1-7
+    parser.add_argument('--task', type=str, default='mortality') # mortality, readmit, or llos
+    parser.add_argument('--model', type=str, default='all') # all, lr, or rf
+    parser.add_argument('--inputs', type=int, default=4) # 3: T + S, 4: U, 7: U + T + S
     args = parser.parse_args()
     return args
 
@@ -59,14 +58,12 @@ def train_test_base(X_train, X_test, y_train, y_test, name):
 
 if __name__ == '__main__':
     args = parse_args()
-    task, model, balance, inputs = vars(args).values()
+    task, model, inputs = vars(args).values()
     print('Running task %s using inputs %d...' % (task, inputs))
-    train_ids, val_ids, test_ids = get_ids('data/processed/files/splits.json')
+    train_ids, _, test_ids = get_ids('data/processed/files/splits.json')
 
     df = pd.read_csv('data/processed/%s.csv' % task).sort_values('hadm_id')
 
-    if task != 'labels_icd' and task != 'los_bin':
-        pass
     train_ids = np.intersect1d(train_ids, df['hadm_id'].tolist())
     test_ids = np.intersect1d(test_ids, df['hadm_id'].tolist())
 
@@ -75,26 +72,14 @@ if __name__ == '__main__':
 
     if choices[0] == '1':
         print('Loading notes...')
-        df_notes = pd.read_csv('data/processed/earlynotes.csv').sort_values('hadm_id')
-        doc2vec = Doc2Vec.load('models/doc2vec.model')
-        df_notes['text'] = df_notes['text'].astype(str)
-        df_notes['vector'] = df_notes['text'].apply(lambda note: doc2vec.infer_vector(text2words(note)))
-        df_notes = df_notes.groupby('hadm_id')['vector'].apply(list).reset_index()
-        df_notes['vector'] = df_notes['vector'].apply(lambda notes: np.mean(notes, axis=0))
-        df_notes_col = 'vector'
-
-        X_train_notes = df_notes[df_notes['hadm_id'].isin(train_ids)][df_notes_col].to_list()
-        X_test_notes = df_notes[df_notes['hadm_id'].isin(test_ids)][df_notes_col].to_list()
-        
+        vector_dict = json.load(open('data/processed/files/vector_dict.json'))
+        X_train_notes = [np.mean(vector_dict.get(adm_id, []), axis=0) for adm_id in train_ids]
+        X_test_notes = [np.mean(vector_dict.get(adm_id, []), axis=0) for adm_id in test_ids]
         X_train.append(X_train_notes)
         X_test.append(X_test_notes)
     if choices[1] == '1':
         print('Loading temporal data...')
         df_temporal = pd.read_csv('data/processed/features.csv').drop('charttime', axis=1)
-        # temporal_ms_dict = json.load(open('data/processed/files/feature_ms_dict.json'))
-        # for col in df_temporal.columns[1:]:
-        #     col_mean, col_std = temporal_ms_dict[col]
-        #     df_temporal[col] = (df_temporal[col] - col_mean) / col_std
         temporal_mm_dict = json.load(open('data/processed/files/feature_mm_dict.json'))
         for col in df_temporal.columns[1:]:
             col_min, col_max = temporal_mm_dict[col]

@@ -1,164 +1,225 @@
-import pandas as pd
+#!/usr/bin/env python
+# coding=utf-8
+
+
+import sys
+
+import os
+import sys
+import time
 import numpy as np
+from sklearn import metrics
+import random
+import json
+from glob import glob
+from collections import OrderedDict
 from tqdm import tqdm
 
+
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from torch.autograd import Variable
+from torch.backends import cudnn
+from torch.nn import DataParallel
 from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score
 
-import argparse
-import os
-import json
+import data_loader
+from models import lstm, cnn, icnn
+import myloss
+import function
+from utils import cal_metric
 
-from load_data import FusionDataset
-from utils import cal_metric, get_ids, load_model, save_model
+sys.path.append('./tools')
+import parse, py_op
 
+args = parse.args
+args.embed_size = 200
+args.hidden_size = args.rnn_size = args.embed_size 
+if torch.cuda.is_available():
+    args.gpu = 1
+else:
+    args.gpu = 0
 
-class Net(nn.Module):
-    def __init__(self, args, n_classes, input_size, hidden_size, n_layers=1):
-        super(Net, self).__init__()
-        self.args = args
-        self.n_classes = n_classes
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.n_layers = n_layers
+args.use_ve = 1
+args.n_visit = 24
+args.use_unstructure = 1
+args.value_embedding = 'use_order'
+# args.value_embedding = 'no'
+print ('epochs,', args.epochs)
 
-        self.lstm = nn.LSTM(input_size, hidden_size, n_layers, batch_first=True)
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_size, int(hidden_size / 2)),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(int(hidden_size / 2), n_classes)
-        )
+args.dataset = 'task2'
+args.file_dir = args.lab_test_file_dir
+args.result_dir = args.lab_test_result_dir
+args.data_dir = args.lab_test_data_dir
 
-    def forward(self, x_demo, x_notes, x_temporal):
-        out, (hn, cn) = self.lstm(x_temporal, None)
-        out = self.fc(out[:, -1, :])
-        return torch.sigmoid(out)
-
-
-def run(model, args, device, data_loader, optimizer, epoch, best_metric, phase="train"):
-    total_loss = 0
-    probs_list, labels_list = [], []
-    if phase == "train":
-        model.train()
-        print("Training epoch %d:" % epoch)
+def _cuda(tensor, is_tensor=True):
+    if args.gpu:
+        if is_tensor:
+            return tensor.cuda(async=True)
+        else:
+            return tensor.cuda()
     else:
-        model.eval()
-        print("%s:" % phase.capitalize())
-    for batch_idx, (x_demo, x_notes, x_temporal, target) in enumerate(tqdm(data_loader)):
-        x_demo, x_notes, x_temporal, target = x_demo.to(device), x_notes.to(device), x_temporal.to(device), target.to(device)
-        output = model(x_demo, x_notes, x_temporal)
-        loss = F.binary_cross_entropy(output, target)
-        total_loss += loss.item()
-        if phase == "train":
+        return tensor
+
+def get_lr(epoch):
+    lr = args.lr
+    return lr
+
+    if epoch <= args.epochs * 0.5:
+        lr = args.lr
+    elif epoch <= args.epochs * 0.75:
+        lr = 0.1 * args.lr
+    elif epoch <= args.epochs * 0.9:
+        lr = 0.01 * args.lr
+    else:
+        lr = 0.001 * args.lr
+    return lr
+
+def index_value(data):
+    '''
+    map data to index and value
+    '''
+    if args.use_ve == 0:
+        data = Variable(_cuda(data)) # [bs, 250]
+        return data
+    data = data.numpy()
+    index = data / (args.split_num + 1)
+    value = data % (args.split_num + 1)
+    index = Variable(_cuda(torch.from_numpy(index.astype(np.int64))))
+    value = Variable(_cuda(torch.from_numpy(value.astype(np.int64))))
+    return [index, value]
+
+def train_eval(data_loader, net, loss, epoch, optimizer, best_metric, phase='train'):
+    print(phase)
+    lr = get_lr(epoch)
+    if phase == 'train':
+        net.train()
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+    else:
+        net.eval()
+
+    loss_list, pred_list, label_list, = [], [], []
+    for b, data_list in enumerate(tqdm(data_loader)):
+        data, dtime, demo, content, label, files = data_list
+        if args.value_embedding == 'no':
+            data = Variable(_cuda(data))
+        else:
+            data = index_value(data)
+
+
+        dtime = Variable(_cuda(dtime)) 
+        demo = Variable(_cuda(demo)) 
+        content = Variable(_cuda(content)) 
+        label = Variable(_cuda(label)) 
+        output = net(data, dtime, demo, content) # [bs, 1]
+        # output = net(data, dtime, demo) # [bs, 1]
+
+
+
+        loss_output = loss(output, label)
+        pred_list.append(output.data.cpu().numpy())
+        loss_list.append(loss_output[0].data.cpu().numpy())
+        label_list.append(label.data.cpu().numpy())
+
+        if phase == 'train':
             optimizer.zero_grad()
-            loss.backward()
+            loss_output[0].backward()
             optimizer.step()
-        probs = output.cpu().detach().numpy()
-        labels = target.cpu().detach().numpy()
-        probs_list.append(probs)
-        labels_list.append(labels)
-    all_probs = np.row_stack(probs_list)
-    all_labels = np.row_stack(labels_list)
-    aucs = []
-    for i in range(all_labels.shape[1]):
-        auc = roc_auc_score(all_labels[:, i], all_probs[:, i])
-        aucs.append(auc)
-    avg_metric = np.mean(aucs)
-    if phase == "train":
-        print("Loss: %.4f, average metric: %.4f" % (total_loss, avg_metric))
-    elif phase == "val":
-        if avg_metric > best_metric:
-            best_metric = avg_metric
-            save_model(
-                {
-                    "args": args,
-                    "epoch": epoch,
-                    "best_metric": best_metric,
-                    "state_dict": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                }
-            )
-        print(
-            "Loss: %.4f, best metric: %.4f, AUCs: %s"
-            % (total_loss, best_metric, ", ".join(["%.4f" % auc for auc in aucs]))
-        )
+
+    pred = np.concatenate(pred_list, 0)
+    label = np.concatenate(label_list, 0)
+    if len(pred.shape) == 1:
+        metric = function.compute_auc(label, pred)
     else:
         metrics = []
-        for i in range(all_labels.shape[1]):
-            metric = cal_metric(all_labels[:, i], all_probs[:, i])
-            print(i + 1, metric)
-            metrics.append(metric)
-        metrics = np.matrix(metrics)
+        auc_metrics = []
+        for i_shape in range(pred.shape[1]):
+            metric0 = cal_metric(label[:, i_shape], pred[:, i_shape])
+            auc_metric = function.compute_auc(label[:, i_shape], pred[:, i_shape])
+            # print('........AUC_{:d}: {:3.4f}, AUPR_{:d}: {:3.4f}'.format(i_shape, auc, i_shape, aupr))
+            print(i_shape + 1, metric0)
+            metrics.append(metric0)
+            auc_metrics.append(auc_metric)
         print('Avg', np.mean(metrics, axis=0).tolist())
+        metric = np.mean(auc_metrics)
+    avg_loss = np.mean(loss_list)
+
+    print('\n{:s} Epoch {:d} (lr {:3.6f})'.format(phase, epoch, lr))
+    print('loss: {:3.4f} \t'.format(avg_loss))
+    if phase == 'valid' and best_metric[0] < metric:
+        best_metric = [metric, epoch]
+        function.save_model({'args': args, 'model': net, 'epoch':epoch, 'best_metric': best_metric})
+    if phase != 'train':
+        print('\t\t\t\t best epoch: {:d}     best AUC: {:3.4f} \t'.format(best_metric[1], best_metric[0])) 
+    return best_metric
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Help')
-    parser.add_argument('--batch-size', type=int, default=64,
-                        help='batch size')
-    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
-    parser.add_argument("--seed", type=int, default=42, help="torchs seed")
-    parser.add_argument('--epochs', type=int, default=30,
-                        help='number of training epochs')
-    parser.add_argument(
-        "--model-dir", type=str, default="models", help="path to data directory"
-    )
-    parser.add_argument("--phase", type=str,
-                        default="train", help="train/test")
-    parser.add_argument(
-        "--resume", default=False, action="store_true", help="resume checkpoint"
-    )
-    parser.add_argument('--doc2vec-path', type=str, default='models/doc2vec.model',
-                        help='path to doc2vec model')
-    parser.add_argument('--root-dir', type=str, default='data/processed',
-                        help='path to root dir')
-    parser.add_argument('--n-classes', type=int, default=1,
-                        help='number of classes')
-    parser.add_argument('--n-features', type=int, default=26,
-                        help='number of temporal features')
-    parser.add_argument("--no-cuda", default=False, action="store_true", 
-                        help="disable CUDA")
-    return parser.parse_args()
+def main():
 
+    assert args.dataset in ['case1', 'case2', 'task2']
+    args.n_ehr = len(py_op.myreadjson(os.path.join(args.file_dir, 'demo_index_dict.json'))) + 10
+    args.name_list = py_op.myreadjson(os.path.join(args.file_dir, 'feature_list.json'))[1:]
+    args.input_size = len(args.name_list)
+    files = sorted(glob(os.path.join(args.data_dir, 'resample_data/*.csv')))
+    data_splits = py_op.myreadjson(os.path.join(args.file_dir, 'splits.json'))
+    train_files = [f for idx in [0, 1, 2, 3, 4, 5, 6] for f in data_splits[idx]]
+    valid_files = [f for idx in [7] for f in data_splits[idx]]
+    test_files = [f for idx in [8, 9] for f in data_splits[idx]]
+    if args.phase == 'test':
+        train_phase, valid_phase, test_phase, train_shuffle = 'test', 'test', 'test', False
+    else:
+        train_phase, valid_phase, test_phase, train_shuffle = 'train', 'valid', 'test', True
+    train_dataset = data_loader.DataBowl(args, train_files, phase=train_phase)
+    valid_dataset = data_loader.DataBowl(args, valid_files, phase=valid_phase)
+    test_dataset = data_loader.DataBowl(args, test_files, phase=test_phase)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=train_shuffle, num_workers=args.workers, pin_memory=True)
+    valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
 
-if __name__ == '__main__':
-    args = parse_args()
-    use_cuda = torch.cuda.is_available() and not args.no_cuda
-    device = torch.device("cuda" if use_cuda else "cpu")
-    torch.manual_seed(args.seed)
+    args.vocab_size = args.input_size + 2
 
-    train_ids, val_ids, test_ids = get_ids(os.path.join(args.root_dir, 'files', 'splits.json'))    
+    if args.use_unstructure:
+        args.unstructure_size = len(py_op.myreadjson(os.path.join(args.file_dir, 'vocab_list.json'))) + 10
 
-    train_data = FusionDataset(train_ids, args)
-    val_data = FusionDataset(val_ids, args)
-    test_data = FusionDataset(test_ids, args)
+    # net = icnn.CNN(args)
+    # net = cnn.CNN(args)
+    net = lstm.LSTM(args)
+    # net = torch.nn.DataParallel(net)
+    # loss = myloss.Loss(0)
+    loss = myloss.MultiClassLoss(0)
 
-    train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=8, pin_memory=True)
-    val_loader = DataLoader(val_data, batch_size=args.batch_size, shuffle=False, num_workers=8, pin_memory=True)
-    test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False, num_workers=8, pin_memory=True)
+    net = _cuda(net, 0)
+    loss = _cuda(loss, 0)
 
-    model = Net(args, n_classes=args.n_classes, input_size=args.n_features, hidden_size=256).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    criterion = nn.CrossEntropyLoss()
-
-    best_metric = 0
-    start_epoch = 1
+    best_metric= [0,0]
+    start_epoch = 0
 
     if args.resume:
-        model_dict = {"args": args, "model": model}
-        model, best_metric, start_epoch = load_model(model_dict)
+        p_dict = {'model': net}
+        function.load_model(p_dict, args.resume)
+        best_metric = p_dict['best_metric']
+        start_epoch = p_dict['epoch'] + 1
 
-    if args.phase == "test":
-        print("Testing...")
-        run(model, args, device, test_loader, optimizer, 0, best_metric, "test")
-    else:
-        print("Training start...")
-        for epoch in range(start_epoch, args.epochs + 1):
-            run(model, args, device, train_loader, optimizer, epoch, best_metric, "train",
-            )
-            run(model, args, device, val_loader, optimizer, epoch, best_metric, "val")
+    parameters_all = []
+    for p in net.parameters():
+        parameters_all.append(p)
 
+    optimizer = torch.optim.Adam(parameters_all, args.lr)
+
+    if args.phase == 'train':
+        for epoch in range(start_epoch, args.epochs):
+            print('start epoch :', epoch)
+            t0 = time.time()
+            train_eval(train_loader, net, loss, epoch, optimizer, best_metric)
+            t1 = time.time()
+            print('Running time:', t1 - t0)
+            best_metric = train_eval(valid_loader, net, loss, epoch, optimizer, best_metric, phase='valid')
+        print('best metric', best_metric)
+
+    elif args.phase == 'test':
+        # train_eval(train_loader, net, loss, 0, optimizer, best_metric, 'test')
+        # train_eval(valid_loader, net, loss, 0, optimizer, best_metric, 'test')
+        train_eval(test_loader, net, loss, 0, optimizer, best_metric, 'test')
+
+if __name__ == '__main__':
+    main()

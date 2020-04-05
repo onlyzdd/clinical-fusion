@@ -104,13 +104,8 @@ def cal_metric(y_true, probs):
     preds = (probs > optimal_threshold).astype(int)
     auc = metrics.roc_auc_score(y_true, probs)
     auprc = metrics.average_precision_score(y_true, preds)
-    tn, fp, fn, tp = metrics.confusion_matrix(y_true, preds).ravel()
-    acc = (tp + tn) / (tp + tn + fp + fn)
-    precision = 1.0 * (tp / (tp + fp))
-    sen = 1.0 * (tp / (tp + fn))  # recall
-    spec = 1.0 * (tn / (tn + fp))
     f1 = metrics.f1_score(y_true, preds)
-    return acc, precision, sen, spec, f1, auc, auprc
+    return f1, auc, auprc
 
 
 def save_model(all_dict, name='best_model.pth'):

@@ -23,7 +23,7 @@ if __name__ == "__main__":
         df[df['hadm_id'].isin(adm_ids)].to_csv('./data/processed/{}.csv'.format(task), index=None)
     
     df = pd.read_csv('./data/processed/los.csv')
-    df['los'] = (df['los'] > 7).astype(int)
-    df.to_csv('./data/processed/los_bin.csv', index=None)
+    df['llos'] = (df['los'] > 7).astype(int)
+    df[['hadm_id', 'llos']].to_csv('./data/processed/llos.csv', index=None)
 
     df_icd[df_icd['hadm_id'].isin(adm_ids)].to_csv('./data/processed/labels_icd.csv', index=None)

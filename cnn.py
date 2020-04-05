@@ -14,7 +14,9 @@ import sys
 sys.path.append('../tools')
 import parse, py_op
 
-def value_embedding_data(d = 512, split = 200):
+output_size = 1
+
+def value_embedding_data(d = 200, split = 200):
     vec = np.array([np.arange(split) * i for i in range(int(d/2))], dtype=np.float32).transpose()
     vec = vec / vec.max() 
     embedding = np.concatenate((np.sin(vec), np.cos(vec)), 1)
@@ -105,13 +107,13 @@ class CNN(nn.Module):
             nn.Linear (args.rnn_size * 2, args.rnn_size),
             nn.ReLU ( ),
             nn.Dropout ( 0.1),
-            nn.Linear ( args.rnn_size, 20),
+            nn.Linear ( args.rnn_size, output_size),
         )
         self.output = nn.Sequential (
             nn.Linear (args.rnn_size, args.rnn_size),
             nn.ReLU ( ),
             nn.Dropout ( 0.1),
-            nn.Linear ( args.rnn_size, 1),
+            nn.Linear ( args.rnn_size, output_size),
         )
         self.pooling = nn.AdaptiveMaxPool1d(1)
 
@@ -135,10 +137,10 @@ class CNN(nn.Module):
             self.vocab_embedding = nn.Embedding (args.unstructure_size+10, args.embed_size )
             # self.vocab_layer = self.make_layer(block, embed_size, layers[0], 2)
             self.vocab_layer = nn.Sequential(
-                    nn.Dropout(0.1),
-                    conv3(embed_size, embed_size, 2, 3),
+                    nn.Dropout(0.2),
+                    conv3(embed_size, embed_size, 2, 2),
                     nn.BatchNorm1d(embed_size),
-                    nn.Dropout(0.1),
+                    nn.Dropout(0.2),
                     nn.ReLU(),
                     # conv3(embed_size, embed_size, 2, 3),
                     # nn.BatchNorm1d(embed_size),
@@ -155,35 +157,35 @@ class CNN(nn.Module):
                 nn.Linear (args.embed_size * 3, 3 * args.embed_size),
                 nn.ReLU ( ),
                 nn.Dropout ( 0.1),
-                nn.Linear ( 3 * args.embed_size, 20),
+                nn.Linear ( 3 * args.embed_size, output_size),
             )
             self.one_output = nn.Sequential (
                 # nn.Linear (args.embed_size * 3, args.embed_size),
                 # nn.ReLU ( ),
                 nn.Dropout ( 0.1),
-                nn.Linear ( args.embed_size, 20),
+                nn.Linear ( args.embed_size, output_size),
             )
 
 
     def visit_pooling(self, x):
         output = x
         size = output.size()
-        output = output.view(size[0] * size[1], size[2], output.size(3))    # (64*30, 13, 512)
-        output = torch.transpose(output, 1,2).contiguous()                  # (64*30, 512, 13)
-        output = self.pooling(output)                                       # (64*30, 512, 1)
-        output = output.view(size[0], size[1], size[3])                     # (64, 30, 512)
+        output = output.view(size[0] * size[1], size[2], output.size(3))    # (64*30, 13, 200)
+        output = torch.transpose(output, 1,2).contiguous()                  # (64*30, 200, 13)
+        output = self.pooling(output)                                       # (64*30, 200, 1)
+        output = output.view(size[0], size[1], size[3])                     # (64, 30, 200)
         return output
 
     def value_order_embedding(self, x):
         size = list(x[0].size())               # (64, 30, 13)
         index, value = x
-        xi = self.embedding(index.view(-1))          # (64*30*13, 512)
+        xi = self.embedding(index.view(-1))          # (64*30*13, 200)
         # xi = xi * (value.view(-1).float() + 1.0 / self.args.split_num)
-        xv = self.value_embedding(value.view(-1))    # (64*30*13, 512)
+        xv = self.value_embedding(value.view(-1))    # (64*30*13, 200)
         x = torch.cat((xi, xv), 1)                   # (64*30*13, 1024)
-        x = self.value_mapping(x)                    # (64*30*13, 512)   
+        x = self.value_mapping(x)                    # (64*30*13, 200)   
         size.append(-1)
-        x = x.view(size)                    # (64, 30, 13, 512)
+        x = x.view(size)                    # (64, 30, 13, 200)
         return x
 
         
@@ -204,10 +206,10 @@ class CNN(nn.Module):
 
     def forward(self, x, t, dd, content=None):
 
-        if 0 and content is not None:
-            content = self.vocab_embedding(content).transpose(1,2)
-            content = self.vocab_layer(content)
-            content = self.pooling(content)                                       # (64*30, 512, 1)
+        if content is not None:
+            # content = self.vocab_embedding(content).transpose(1,2)
+            content = self.vocab_layer(content.transpose(1,2))
+            content = self.pooling(content)                                       # (64*30, 200, 1)
             content = content.view((content.size(0), -1))
             return self.one_output(content)
 
@@ -228,7 +230,7 @@ class CNN(nn.Module):
         # out = self.layer2(out)
         # out = self.layer3(out)
 
-        output = self.pooling(out)                                       # (64*30, 512, 1)
+        output = self.pooling(out)                                       # (64*30, 200, 1)
         output = output.view((output.size(0), -1))
 
 
@@ -237,7 +239,7 @@ class CNN(nn.Module):
             dsize = list(dd.size()) + [-1]
             d = self.dd_embedding(dd.view(-1)).view(dsize)
             d = self.dd_mapping(d)
-            d = torch.transpose(d, 1,2).contiguous()                  # (64*30, 512, 100)
+            d = torch.transpose(d, 1,2).contiguous()                  # (64*30, 200, 100)
             d = self.pooling(d)
             d = d.view((d.size(0), -1))
             output = torch.cat((output, d), 1)
@@ -246,9 +248,9 @@ class CNN(nn.Module):
         #     out = self.output(output)
 
         if content is not None:
-            content = self.vocab_embedding(content).transpose(1,2)
-            content = self.vocab_layer(content)
-            content = self.pooling(content)                                       # (64*30, 512, 1)
+            # content = self.vocab_embedding(content)
+            content = self.vocab_layer(content.transpose(1,2))
+            content = self.pooling(content)                                       # (64*30, 200, 1)
             content = content.view((content.size(0), -1))
             # content = self.one_output(content) + 0.3 * out
             # out = content + out
