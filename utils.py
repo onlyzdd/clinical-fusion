@@ -139,9 +139,34 @@ def get_ids(split_json):
     test_ids = [adm_id[-10:-4] for adm_id in test_ids]
     return train_ids, val_ids, test_ids
 
+
 def balance_samples(df, times, task):
     df_pos = df[df[task] == 1]
     df_neg = df[df[task] == 0]
     df_neg = df_neg.sample(n=times * len(df_pos), random_state=42)
     df = pd.concat([df_pos, df_neg]).sort_values('hadm_id')
     return df
+
+
+def mkdir(d):
+    path = d.split('/')
+    for i in range(len(path)):
+        d = '/'.join(path[:i+1])
+        if not os.path.exists(d):
+            os.mkdir(d)
+
+
+def csv_split(line, sc=','):
+    res = []
+    inside = 0
+    s = ''
+    for c in line:
+        if inside == 0 and c == sc:
+            res.append(s)
+            s = ''
+        else:
+            if c == '"':
+                inside = 1 - inside
+            s = s + c
+    res.append(s)
+    return res

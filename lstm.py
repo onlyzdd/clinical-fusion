@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import os
 import json
 import torch
@@ -60,12 +57,12 @@ class LSTM(nn.Module):
             self.embedding = nn.Linear(args.input_size, args.embed_size)
         else:
             self.embedding = nn.Embedding (args.vocab_size, args.embed_size )
-        self.lstm1 = nn.LSTM ( input_size=args.embed_size,
+        self.lstm1 = nn.LSTM (input_size=args.embed_size,
                               hidden_size=args.hidden_size,
                               num_layers=args.num_layers,
                               batch_first=True,
                               bidirectional=True)
-        self.lstm2 = nn.LSTM ( input_size=args.embed_size,
+        self.lstm2 = nn.LSTM (input_size=args.embed_size,
                               hidden_size=args.hidden_size,
                               num_layers=args.num_layers,
                               batch_first=True,

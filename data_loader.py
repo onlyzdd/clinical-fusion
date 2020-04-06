@@ -1,7 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-
 import json
 import collections
 import os
@@ -18,7 +14,7 @@ import sys
 sys.path.append('./tools')
 import py_op
 
-vector_dict = py_op.myreadjson('./data/lab_test_data/files/vector_dict.json')
+vector_dict = json.load(open('data/processed/files/vector_dict.json', 'r'))
 
 def find_index(v, vs, i=0, j=-1):
     if j == -1:
@@ -44,27 +40,21 @@ class DataBowl(Dataset):
         self.phase = phase
         self.files = files
         self.n_dd = 6
-        self.feature_mm_dict = py_op.myreadjson(os.path.join(args.file_dir, 'feature_mm_dict.json'))
-        self.feature_value_dict = py_op.myreadjson(os.path.join(args.file_dir, 'feature_value_dict_{:d}.json'.format(args.split_num)))
-        demo_file = os.path.join(args.file_dir, 'demo_dict.json')
+        self.feature_mm_dict = json.load(open(os.path.join(args.files_dir, 'feature_mm_dict.json'), 'w'))
+        self.feature_value_dict = json.load(open(os.path.join(args.files_dir, 'feature_value_dict_{:d}.json'.format(args.split_num)), 'w'))
+        demo_file = os.path.join(args.files_dir, 'demo_dict.json')
         if os.path.exists(demo_file):
-            self.demo_dict = py_op.myreadjson(demo_file)
+            self.demo_dict = json.load(open(demo_file, 'r'))
         else:
             self.demo_dict = { }
         if args.use_unstructure:
-            unstructure_file = os.path.join(args.file_dir, 'unstructure_dict.json')
-            self.unstructure_dict = py_op.myreadjson(unstructure_file)
+            unstructure_file = os.path.join(args.files_dir, 'unstructure_dict.json')
+            self.unstructure_dict = json.load(open(unstructure_file, 'r'))
             self.max_length = 1000
-            # length_list = []
-            # for v in self.unstructure_dict.values():
-            #     length_list.append(len(v))
-            # print('max length', max(length_list))
-            # self.max_length = sorted(length_list)[int(0.9 * max(length_list))]
-            # print('max length', self.max_length)
         else:
             self.unstructure_dict = { }
             self.max_length = 0
-        self.label_dict = py_op.myreadjson(os.path.join(args.file_dir, 'label_dict.json'))
+        self.label_dict = json.load(open(os.path.join(args.files_dir, '%s_dict.json' % args.task), 'r'))
 
         self.use_first_records = 1
         if self.use_first_records:

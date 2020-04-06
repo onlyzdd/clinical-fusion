@@ -1,51 +1,18 @@
-# coding=utf8
-
 import os
 import argparse
 
-parser = argparse.ArgumentParser(description='MIMIC III PROJECTS')
+parser = argparse.ArgumentParser(description='clinical fusion help')
 
-# data dir
-parser.add_argument(
-        '--mimic-dir',
-        type=str,
-        default='/home/yin/data/mimiciii',
-        help='mimic iii data directory'
-        )
 parser.add_argument(
         '--data-dir',
         type=str,
         default='./data/',
         help='selected and preprocessed data directory'
         )
-parser.add_argument(
-        '--result-dir',
-        type=str,
-        default='./result/',
-        help='result directory'
-        )
-parser.add_argument(
-        '--file-dir',
-        type=str,
-        default='./file/',
-        help='useful file directory'
-        )
-
-# mysql passwd
-parser.add_argument(
-        '--mysql-pwd',
-        default='root',
-        type=str,
-        help='mysql passwd')
-parser.add_argument(
-        '--database',
-        default='mimic',
-        type=str,
-        help='mysql database')
 
 # problem setting
 parser.add_argument('--task',
-        default='task1',
+        default='mortality',
         type=str,
         metavar='S',
         help='start from checkpoints')
@@ -67,7 +34,7 @@ parser.add_argument(
         help='at most n codes for same visit')
 parser.add_argument(
         '--n-visit',
-        default=200,
+        default=24,
         type=int,
         help='at most input n visits')
 
@@ -152,8 +119,7 @@ parser.add_argument(
 parser.add_argument('--phase',
         default='train',
         type=str,
-        metavar='S',
-        help='pretrain/train/test phase')
+        help='train/test phase')
 parser.add_argument(
         '--batch-size',
         '-b',
@@ -162,16 +128,12 @@ parser.add_argument(
         default=64,
         help='batch size'
         )
+parser.add_argument('--model-path', type=str, default='models/best.ckpt', help='model path')
 parser.add_argument('--resume',
         default='',
         type=str,
         metavar='S',
         help='start from checkpoints')
-parser.add_argument(
-        '--compute-weight',
-        default=0,
-        type=int,
-        help='compute weight for interpretebility')
 parser.add_argument(
         '--workers',
         default=8,
@@ -185,47 +147,14 @@ parser.add_argument('--lr',
         metavar='LR',
         help='initial learning rate')
 parser.add_argument('--epochs',
-        default=2000,
+        default=50,
         type=int,
         metavar='N',
         help='number of total epochs to run')
-parser.add_argument('--save-freq',
-        default=1,
-        type=int,
-        metavar='S',
-        help='save frequency')
-parser.add_argument('--save-pred-freq',
-        default='10',
-        type=int,
-        metavar='S',
-        help='save pred clean frequency')
-parser.add_argument('--val-freq',
-        default=1,
-        type=int,
-        metavar='S',
-        help='val frequency')
 
 args = parser.parse_args()
 
-
-csv_list = '''ADMISSIONS.csv  CHARTEVENTS.csv     D_CPT.csv            D_ICD_PROCEDURES.csv  DRGCODES.csv        INPUTEVENTS_MV.csv      NOTEEVENTS.csv    PRESCRIPTIONS.csv       process_mimic.py  TRANSFERS.csv CALLOUT.csv     CPTEVENTS.csv       DIAGNOSES_ICD.csv    D_ITEMS.csv           ICUSTAYS.csv        LABEVENTS.csv           OUTPUTEVENTS.csv  PROCEDUREEVENTS_MV.csv  robots.txt CAREGIVERS.csv  DATETIMEEVENTS.csv  D_ICD_DIAGNOSES.csv  D_LABITEMS.csv        INPUTEVENTS_CV.csv  MICROBIOLOGYEVENTS.csv  PATIENTS.csv      PROCEDURES_ICD.csv      SERVICES.csv ''' 
-args.csv_dict = { c.replace('.csv', '') : os.path.join(args.mimic_dir, c) for c in csv_list.strip().split() }
-# print args.csv_dict
-
-args.lab_test_data_dir = os.path.join(args.data_dir, 'processed')
-args.lab_test_resample_dir = os.path.join(args.lab_test_data_dir, 'resample_data')
-args.lab_test_initial_dir = os.path.join(args.lab_test_data_dir, 'initial_data')
-args.lab_test_file_dir = os.path.join(args.lab_test_data_dir, 'files')
-args.lab_test_result_dir = args.result_dir
-
-
-
-# mysql
-try:
-    import MySQLdb
-    conn = MySQLdb.connect(db='mimic', host='localhost', user='root', passwd='root', port=3306)
-    args.conn = conn
-except:
-    print("Fail to load MySQLdb")
-
-
+args.data_dir = os.path.join(args.data_dir, 'processed')
+args.files_dir = os.path.join(args.data_dir, 'files')
+args.resample_dir = os.path.join(args.data_dir, 'resample_data')
+args.initial_dir = os.path.join(args.data_dir, 'initial_data')

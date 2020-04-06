@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import os
 import json
 import torch
@@ -8,6 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.autograd import *
 import numpy as np
+
 
 def hard_mining(neg_output, neg_labels, num_hard, largest=True):
     num_hard = min(max(num_hard, 10), len(neg_output))
@@ -49,9 +47,7 @@ class Loss(nn.Module):
         if len(neg_prob):
             neg_loss = 0.5 * self.classify_loss(neg_prob, neg_label)
         classify_loss = pos_loss + neg_loss
-        # classify_loss = self.classify_loss(prob, labels)
-
-        # stati number
+        
         prob = prob.data.cpu().numpy() > 0.5
         labels = labels.data.cpu().numpy()
         pos_l = (labels==1).sum()
@@ -69,15 +65,13 @@ class MultiClassLoss(nn.Module):
         self.hard_mining = hard_mining
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, prob, labels, train=True):
 
+    def forward(self, prob, labels, train=True):
         prob = self.sigmoid(prob)
         classify_loss, pos_p, pos_l, neg_p, neg_l = 0, 0, 0, 0, 0
 
         prob_list = prob
         labels_list = labels
-        # print(prob_list.size())
-        # print(labels_list.size())
         for i in range(prob.size(1)):
             prob = prob_list[:, i]
             labels = labels_list[:, i]
@@ -114,5 +108,3 @@ class MultiClassLoss(nn.Module):
             neg_p += (prob + labels == 0).sum()
 
         return [classify_loss, pos_p, pos_l, neg_p, neg_l]
-
-

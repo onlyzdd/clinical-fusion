@@ -7,7 +7,6 @@ from utils import clean_text, text2words
 from gensim.models.doc2vec import Doc2Vec, TaggedDocument
 
 import json
-
 import argparse
 
 def parse_args():

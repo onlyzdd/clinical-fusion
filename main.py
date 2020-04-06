@@ -1,7 +1,3 @@
-#!/usr/bin/env python
-# coding=utf-8
-
-
 import sys
 
 import os
@@ -23,7 +19,7 @@ from torch.nn import DataParallel
 from torch.utils.data import DataLoader
 
 import data_loader
-from models import lstm, cnn, icnn
+import lstm, cnn
 import myloss
 import function
 from utils import cal_metric
@@ -46,10 +42,9 @@ args.value_embedding = 'use_order'
 # args.value_embedding = 'no'
 print ('epochs,', args.epochs)
 
-args.dataset = 'task2'
-args.file_dir = args.lab_test_file_dir
-args.result_dir = args.lab_test_result_dir
-args.data_dir = args.lab_test_data_dir
+args.task = 'mortality'
+args.files_dir = args.files_dir
+args.data_dir = args.data_dir
 
 def _cuda(tensor, is_tensor=True):
     if args.gpu:
@@ -155,13 +150,11 @@ def train_eval(data_loader, net, loss, epoch, optimizer, best_metric, phase='tra
 
 
 def main():
-
-    assert args.dataset in ['case1', 'case2', 'task2']
-    args.n_ehr = len(py_op.myreadjson(os.path.join(args.file_dir, 'demo_index_dict.json'))) + 10
-    args.name_list = py_op.myreadjson(os.path.join(args.file_dir, 'feature_list.json'))[1:]
+    args.n_ehr = len(json.load(open(os.path.join(args.files_dir, 'demo_index_dict.json'), 'r'))) + 10
+    args.name_list = json.load(open(os.path.join(args.files_dir, 'feature_list.json'), 'r'))[1:]
     args.input_size = len(args.name_list)
     files = sorted(glob(os.path.join(args.data_dir, 'resample_data/*.csv')))
-    data_splits = py_op.myreadjson(os.path.join(args.file_dir, 'splits.json'))
+    data_splits = json.load(open(os.path.join(args.files_dir, 'splits.json'), 'r'))
     train_files = [f for idx in [0, 1, 2, 3, 4, 5, 6] for f in data_splits[idx]]
     valid_files = [f for idx in [7] for f in data_splits[idx]]
     test_files = [f for idx in [8, 9] for f in data_splits[idx]]
@@ -179,7 +172,7 @@ def main():
     args.vocab_size = args.input_size + 2
 
     if args.use_unstructure:
-        args.unstructure_size = len(py_op.myreadjson(os.path.join(args.file_dir, 'vocab_list.json'))) + 10
+        args.unstructure_size = len(py_op.myreadjson(os.path.join(args.files_dir, 'vocab_list.json'))) + 10
 
     # net = icnn.CNN(args)
     # net = cnn.CNN(args)
@@ -217,9 +210,8 @@ def main():
         print('best metric', best_metric)
 
     elif args.phase == 'test':
-        # train_eval(train_loader, net, loss, 0, optimizer, best_metric, 'test')
-        # train_eval(valid_loader, net, loss, 0, optimizer, best_metric, 'test')
         train_eval(test_loader, net, loss, 0, optimizer, best_metric, 'test')
 
 if __name__ == '__main__':
+    print(args)
     main()

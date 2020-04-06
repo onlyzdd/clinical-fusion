@@ -1,35 +1,21 @@
 import numpy as np
 from tqdm import tqdm
-from sklearn import metrics
 
 import os
-import sys
 import time
-import random
 import json
+import argparse
 from glob import glob
-from collections import OrderedDict
 
-sys.path.append('./tools')
-import parse, py_op
+import utils
 
-args = parse.args
-py_op.mkdir(args.data_dir)
-py_op.mkdir(args.result_dir)
-py_op.mkdir(args.lab_test_data_dir)
-py_op.mkdir(args.lab_test_initial_dir)
-py_op.mkdir(args.lab_test_resample_dir)
-py_op.mkdir(args.lab_test_file_dir)
-py_op.mkdir(args.lab_test_result_dir)
-features_csv = os.path.join(args.lab_test_data_dir, 'features.csv')
-label_csv = os.path.join(args.lab_test_data_dir, 'mortality.csv')
-demo_csv = os.path.join(args.lab_test_data_dir, 'demo.csv')
-selected_indices = []
 
-def time_to_second(t):
-    t = str(t).replace('"', '')
-    t = time.mktime(time.strptime(t,'%Y-%m-%d %H:%M:%S'))
-    return int(t)
+def parse_args():
+    parser = argparse.ArgumentParser(description='preprocessing help')
+    parser.add_argument('--data-dir', type=str, default='data/processed',
+                        help='data dir')
+    return parser.parse_args()
+
 
 def get_time(t):
     try:
@@ -41,22 +27,16 @@ def get_time(t):
         t = int(t/3600)
         return t
 
-def generate_file_for_each_patient():
-    '''
-    create a lab test file for each patient
-    '''
-    global selected_indices
-    initial_dir = args.lab_test_initial_dir
+def generate_file_for_each_patient(args, features_csv):
+    selected_indices = []
+    initial_dir = args.initial_dir
     os.system('rm -r ' + initial_dir)
-    py_op.mkdir(initial_dir)
-    label_dict = py_op.myreadjson(os.path.join(args.lab_test_file_dir, 'label_dict.json'))
+    utils.mkdir(initial_dir)
     for i_line, line in enumerate(open(features_csv)):
         if i_line % 10000 == 0:
             print( i_line)
         if i_line:
             line_data = line.strip().split(',')
-            if line_data[0] not in label_dict:
-                continue
 
             assert len(line_data) == len(feat_list)
             new_line_data = [line_data[i_feat] for i_feat in selected_indices]
@@ -71,7 +51,7 @@ def generate_file_for_each_patient():
             wf.write('\n' + new_line)
             wf.close()
         else:
-            feat_list = py_op.csv_split(line.strip())
+            feat_list = utils.csv_split(line.strip())
             feat_list = [f.strip('"') for f in feat_list]
             print('There are {:d} features.'.format(len(feat_list)))
             print(feat_list)
@@ -81,15 +61,12 @@ def generate_file_for_each_patient():
                 new_head = ','.join(selected_feat_list)
 
 
-def resample_lab_test_data(delta=1, ignore_time=-48):
-    '''
-    resample data so that the records have same time intervals
-    '''
-    resample_dir = args.lab_test_resample_dir
-    initial_dir = args.lab_test_initial_dir
+def resample_data(args, delta=1, ignore_time=-48):
+    resample_dir = args.resample_dir
+    initial_dir = args.initial_dir
 
     os.system('rm -r ' + resample_dir)
-    py_op.mkdir(resample_dir)
+    utils.mkdir(resample_dir)
 
     count_intervals = [0, 0]
     count_dict = dict()
@@ -110,10 +87,6 @@ def resample_lab_test_data(delta=1, ignore_time=-48):
             else:
                 feat_list = line.strip().split(',')
                 feat_list[0] = 'time'
-
-        if len(time_line_dict) < 10:
-            # continue
-            pass
 
         wf = open(os.path.join(resample_dir, fi), 'w')
         wf.write(','.join(feat_list))
@@ -137,7 +110,6 @@ def resample_lab_test_data(delta=1, ignore_time=-48):
                 delta_t = t - last_time
                 if delta_t > delta:
                     vis = 1
-                    # break
                     count_intervals[0] += 1
                     count_dict[t - last_time] = count_dict.get(t - last_time, 0) + 1
                     two_sets[0].add(fi)
@@ -145,15 +117,12 @@ def resample_lab_test_data(delta=1, ignore_time=-48):
                 count_intervals[1] += 1
             last_time = t
         wf.close()
-        if vis:
-            # os.system('rm ' + os.path.join(resample_dir, fi))
-            pass
     print('There are {:d}/{:d} collections data with intervals > {:d}.'.format(count_intervals[0], count_intervals[1], delta))
     print('There are {:d}/{:d} patients with intervals > {:d}.'.format(len(two_sets[0]), len(two_sets[1]), delta))
-    # print(count_dict)
 
-def generate_feature_mm_dict():
-    resample_dir = args.lab_test_resample_dir
+
+def generate_feature_dict(args):
+    resample_dir = args.resample_dir
     files = sorted(glob(os.path.join(resample_dir, '*')))
     feature_value_dict = dict()
     feature_missing_dict = dict()
@@ -195,19 +164,15 @@ def generate_feature_mm_dict():
 
         feature_missing_dict[feat] = 1.0 - 1.0 * len(vs) / len_time
     
-    print('Recommed features: ')
-    for feat, mr in feature_missing_dict.items():
-        if mr < 0.9:
-            print(feat, mr)
+    json.dump(feature_mm_dict, open(os.path.join(args.files_dir, 'feature_mm_dict.json'), 'w'))
+    json.dump(feature_ms_dict, open(os.path.join(args.files_dir, 'feature_ms_dict.json'), 'w'))
+    json.dump(feat_list, open(os.path.join(args.files_dir, 'feature_list.json'), 'w'))
+    json.dump(feature_missing_dict, open(os.path.join(args.files_dir, 'feature_missing_dict.json'), 'w'))
+    json.dump(feature_range_dict, open(os.path.join(args.files_dir, 'feature_value_dict_{:d}.json'.format(args.split_num)), 'w'))
 
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'feature_mm_dict.json'), feature_mm_dict)
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'feature_ms_dict.json'), feature_ms_dict)
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'feature_list.json'), feat_list)
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'feature_missing_dict.json'), feature_missing_dict)
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'feature_value_dict_{:d}.json'.format(args.split_num)), feature_range_dict)
 
-def split_data_to_ten_set():
-    resample_dir = args.lab_test_resample_dir
+def split_data_to_ten_set(args):
+    resample_dir = args.resample_dir
     files = sorted(glob(os.path.join(resample_dir, '*')))
     np.random.shuffle(files)
     splits = []
@@ -215,20 +180,22 @@ def split_data_to_ten_set():
         st = int(len(files) * i / 10)
         en = int(len(files) * (i+1) / 10)
         splits.append(files[st:en])
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'splits.json'), splits)
+    json.dump(splits, open(os.path.join(args.files_dir, 'splits.json'), 'w'))
 
-def generate_label_dict():
+
+def generate_label_dict(args, task):
     label_dict = dict()
-    for i_line, line in enumerate(open(label_csv)):
+    for i_line, line in enumerate(open(os.path.join(args.data_dir, '%s.csv' % task))):
         if i_line:
             data = line.strip().split(',')
             pid = data[0]
             label = ''.join(data[1:])
             pid = str(int(float(pid)))
             label_dict[pid] = label
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'label_dict.json'), label_dict)
+    json.dump(label_dict, open(os.path.join(args.files_dir, '%s_dict.json' % task), 'w'))
 
-def generate_demo_dict():
+
+def generate_demo_dict(args, demo_csv):
     demo_dict = dict()
     demo_index_dict = dict()
     for i_line, line in enumerate(open(demo_csv)):
@@ -240,18 +207,29 @@ def generate_demo_dict():
                 if demo not in demo_index_dict:
                     demo_index_dict[demo] = len(demo_index_dict)
                 demo_dict[pid].append(demo_index_dict[demo])
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'demo_dict.json'), demo_dict)
-    py_op.mywritejson(os.path.join(args.lab_test_file_dir, 'demo_index_dict.json'), demo_index_dict)
+    json.dump(demo_dict, open(os.path.join(args.files_dir, 'demo_dict.json'), 'w'))
+    json.dump(demo_index_dict, open(os.path.join(args.files_dir, 'demo_index_dict.json'), 'w'))
 
-def preprocess():
-    generate_label_dict()
-    generate_demo_dict()
-    generate_file_for_each_patient()
-    resample_lab_test_data()
-    generate_feature_mm_dict()
-    split_data_to_ten_set()
-    pass
+
+def main():
+    args = parse_args()
+    args.files_dir = os.path.join(args.data_dir, 'files')
+    args.initial_dir = os.path.join(args.data_dir, 'initial_data')
+    args.resample_dir = os.path.join(args.data_dir, 'resample_dir')
+    args.split_num = 4000
+    utils.mkdir(args.files_dir)
+    utils.mkdir(args.initial_dir)
+    utils.mkdir(args.resample_dir)
+    features_csv = os.path.join(args.data_dir, 'features.csv')
+    demo_csv = os.path.join(args.data_dir, 'demo.csv')
+    for task in ['mortality', 'readmit', 'llos']:
+        generate_label_dict(args, task)
+    generate_demo_dict(args, demo_csv)
+    generate_file_for_each_patient(args, features_csv)
+    resample_data(args)
+    generate_feature_dict(args)
+    split_data_to_ten_set(args)
 
 
 if __name__ == '__main__':
-    preprocess()
+    main()
