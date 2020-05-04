@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.multiclass import OneVsRestClassifier
+from sklearn.model_selection import GridSearchCV
 from sklearn import metrics
 from gensim.models.doc2vec import Doc2Vec
 
@@ -32,15 +33,24 @@ def train_test_base(X_train, X_test, y_train, y_test, name):
     if name == 'lr':
         print('Start training Logistic Regression:')
         model = LogisticRegression()
+        param_grid = {
+            'penalty'; ['l1', 'l2']
+        }
     else:
         print('Start training Random Forest:')
         model = RandomForestClassifier()
+        param_grid = {
+            'n_estimators': [x for x in range(20, 40, 5)],
+            'max_depth': [None, 20, 40, 60, 80, 100]
+        }
     if mtl:
         model = OneVsRestClassifier(model)
     else:
         y_train, y_test = y_train[:, 0], y_test[:, 0]
     t0 = time.time()
-    model.fit(X_train, y_train)
+    gridsearch = GridSearchCV(model, param_grid, scoring='roc_auc', cv=5)
+    gridsearch.fit(X_train, y_train)
+    model = gridsearch.best_estimator_
     t1 = time.time()
     print('Running time:', t1 - t0)
     probs = model.predict_proba(X_test)
