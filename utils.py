@@ -103,7 +103,7 @@ def cal_metric(y_true, probs):
     optimal_threshold = thresholds[optimal_idx]
     preds = (probs > optimal_threshold).astype(int)
     auc = metrics.roc_auc_score(y_true, probs)
-    auprc = metrics.average_precision_score(y_true, preds)
+    auprc = metrics.average_precision_score(y_true, probs)
     f1 = metrics.f1_score(y_true, preds)
     return f1, auc, auprc
 

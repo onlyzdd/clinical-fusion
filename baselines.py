@@ -97,11 +97,10 @@ if __name__ == '__main__':
         X_test.append(X_test_temporal)
     if choices[2] == '1':
         print('Loading demographics...')
-        df_demo = pd.read_csv('data/processed/demo.csv').sort_values('hadm_id')
-        df_demo = pd.get_dummies(df_demo, drop_first=True)
-        df_demo_cols = df_demo.columns[1:]
-        X_train_demo = df_demo[df_demo['hadm_id'].isin(train_ids)][df_demo_cols].to_numpy()
-        X_test_demo = df_demo[df_demo['hadm_id'].isin(test_ids)][df_demo_cols].to_numpy()
+        demo_json = json.load(open('data/processed/files/demo_dict.json'))
+        df_demo = pd.DataFrame(demo_json.items(), columns=['hadm_id', 'demos']).sort_values('hadm_id')
+        X_train_demo = df_demo[df_demo['hadm_id'].isin(train_ids)][['demos']].to_numpy()
+        X_test_demo = df_demo[df_demo['hadm_id'].isin(test_ids)][['demos']].to_numpy()
         X_train.append(X_train_demo)
         X_test.append(X_test_demo)
     
