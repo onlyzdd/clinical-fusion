@@ -34,7 +34,7 @@ def train_test_base(X_train, X_test, y_train, y_test, name):
         print('Start training Logistic Regression:')
         model = LogisticRegression()
         param_grid = {
-            'penalty'; ['l1', 'l2']
+            'penalty': ['l1', 'l2']
         }
     else:
         print('Start training Random Forest:')
