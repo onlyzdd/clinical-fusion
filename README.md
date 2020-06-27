@@ -16,7 +16,11 @@ This repository contains source code for paper *Combining structured and unstruc
 
 #### Dataset
 
-MIMIC-III database analyzed in the study is available on [PhysioNet](https://mimic.physionet.org/about/mimic) repository. Place `.csv` files under `data/mimic`.
+MIMIC-III database analyzed in the study is available on [PhysioNet](https://mimic.physionet.org/about/mimic) repository. Here are some steps to prepare for the dataset:
+
+- To request access to MIMIC-III, please follow https://mimic.physionet.org/gettingstarted/access/. Make sure to place `.csv` files under `data/mimic`.
+- With access to MIMIC-III, to build the MIMIC-III dataset locally using Postgres, follow the instructions at https://github.com/MIT-LCP/mimic-code/tree/master/buildmimic/postgres.
+- Run SQL queries to generate necessary views, please follow https://github.com/onlyzdd/clinical-fusion/tree/master/query.
 
 #### Software
 
