@@ -2,7 +2,7 @@
 data/**/*.csv
 data/**/*.json
 __pycache__
-result
+results
 models/*.pth
 models/*.model
 models/*.npy

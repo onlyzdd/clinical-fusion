@@ -8,6 +8,7 @@ from sklearn import metrics
 import re
 import os
 import json
+import random
 
 
 stops = set(stopwords.words("english"))
@@ -129,7 +130,20 @@ def load_model(model_dict, name='best_model.pth'):
     
 
 def get_ids(split_json):
-    splits = range(10)
+    splits = list(range(10))
+    adm_ids = json.load(open(split_json))
+    train_ids = np.hstack([adm_ids[t] for t in splits[:7]])
+    val_ids = np.hstack([adm_ids[t] for t in splits[7:8]])
+    test_ids = np.hstack([adm_ids[t] for t in splits[8:]])
+    train_ids = [adm_id[-10:-4] for adm_id in train_ids]
+    val_ids = [adm_id[-10:-4] for adm_id in val_ids]
+    test_ids = [adm_id[-10:-4] for adm_id in test_ids]
+    return train_ids, val_ids, test_ids
+
+
+def get_ids2(split_json, seed):
+    splits = list(range(10))
+    random.Random(seed).shuffle(splits)
     adm_ids = json.load(open(split_json))
     train_ids = np.hstack([adm_ids[t] for t in splits[:7]])
     val_ids = np.hstack([adm_ids[t] for t in splits[7:8]])
