@@ -77,8 +77,8 @@ select
   , avg(TempC) as TempC
   , avg(SpO2) as SpO2
   , avg(Glucose) as Glucose
-from ce
-left join icustays
+from icustays
+left join ce
 on ce.icustay_id = icustays.icustay_id
 group by icustays.hadm_id, ce.charttime
 order by icustays.hadm_id, ce.charttime;
