@@ -171,9 +171,6 @@ def main():
 
     args.vocab_size = args.input_size + 2
 
-    if args.use_unstructure:
-        args.unstructure_size = len(py_op.myreadjson(os.path.join(args.files_dir, 'vocab_list.json'))) + 10
-
     # net = icnn.CNN(args)
     # net = cnn.CNN(args)
     net = lstm.LSTM(args)
