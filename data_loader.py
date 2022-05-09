@@ -1,20 +1,12 @@
 import json
-import collections
 import os
-import random
-import time
-import warnings
-from copy import deepcopy
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-import sys
-sys.path.append('./tools')
-import py_op
-
 vector_dict = json.load(open('data/processed/files/vector_dict.json', 'r'))
+
 
 def find_index(v, vs, i=0, j=-1):
     if j == -1:
@@ -33,65 +25,34 @@ def find_index(v, vs, i=0, j=-1):
     else:
         return find_index(v, vs, k, j)
 
+
 class DataBowl(Dataset):
     def __init__(self, args, files, phase='train'):
         assert (phase == 'train' or phase == 'valid' or phase == 'test')
         self.args = args
         self.phase = phase
         self.files = files
-        self.n_dd = 6
-        self.feature_mm_dict = json.load(open(os.path.join(args.files_dir, 'feature_mm_dict.json'), 'w'))
-        self.feature_value_dict = json.load(open(os.path.join(args.files_dir, 'feature_value_dict_{:d}.json'.format(args.split_num)), 'w'))
-        demo_file = os.path.join(args.files_dir, 'demo_dict.json')
-        if os.path.exists(demo_file):
-            self.demo_dict = json.load(open(demo_file, 'r'))
-        else:
-            self.demo_dict = { }
-        if args.use_unstructure:
-            unstructure_file = os.path.join(args.files_dir, 'unstructure_dict.json')
-            self.unstructure_dict = json.load(open(unstructure_file, 'r'))
-            self.max_length = 1000
-        else:
-            self.unstructure_dict = { }
-            self.max_length = 0
-        self.label_dict = json.load(open(os.path.join(args.files_dir, '%s_dict.json' % args.task), 'r'))
+        self.feature_mm_dict = json.load(
+            open(os.path.join(args.files_dir, 'feature_mm_dict.json'), 'r'))
+        self.feature_value_dict = json.load(open(os.path.join(
+            args.files_dir, 'feature_value_dict_%d.json' % args.split_num), 'r'))
+        self.demo_dict = json.load(
+            open(os.path.join(args.files_dir, 'demo_dict.json'), 'r'))
+        self.label_dict = json.load(
+            open(os.path.join(args.files_dir, '%s_dict.json' % args.task), 'r'))
 
-        self.use_first_records = 1
-        if self.use_first_records:
-            print('Use the first {:d} collections data'.format(args.n_visit))
-        else:
-            print('Use the last {:d} collections data'.format(args.n_visit))
+        print('Use the last %d collections data' % args.n_visit)
 
     def map_input(self, value, feat_list, feat_index):
-
-        # for each feature (index), there are 1 embedding vectors for NA, split_num=100 embedding vectors for different values
-        index_start = (feat_index + 1)* (1 + self.args.split_num) + 1
+        index_start = (feat_index + 1) * (1 + self.args.split_num) + 1
 
         if value in ['NA', '']:
-            if self.args.value_embedding == 'no':
-                return 0
             return 0
         else:
-            # print('""' + value + '""')
             value = float(value)
-            if self.args.value_embedding == 'use_value':
-                minv, maxv = self.feature_mm_dict[feat_list[feat_index]]
-                v = (value - minv) / (maxv - minv + 10e-10)
-                # print(v, minv, maxv)
-                assert v >= 0
-                # map the value to its embedding index
-                v = int(self.args.split_num * v) + index_start
-                return v
-            elif self.args.value_embedding == 'use_order':
-                vs = self.feature_value_dict[feat_list[feat_index]][1:-1]
-                v = find_index(value, vs) + index_start
-                return v
-            elif self.args.value_embedding == 'no':
-                minv, maxv = self.feature_mm_dict[feat_list[feat_index]]
-                v = (value - minv) / (maxv - minv)
-                # v = (value - minv) / maxv + 1
-                v = int(v * self.args.split_num) / float(self.args.split_num)
-                return v
+            vs = self.feature_value_dict[feat_list[feat_index]][1:-1]
+            v = find_index(value, vs) + index_start
+            return v
 
     def map_output(self, value, feat_list, feat_index):
         if value in ['NA', '']:
@@ -103,11 +64,8 @@ class DataBowl(Dataset):
                 print(feat_list[feat_index], minv, maxv)
             assert maxv > minv
             v = (value - minv) / (maxv - minv)
-            # v = (value - minv) / (maxv - minv)
             v = max(0, min(v, 1))
             return v
-
-
 
     def get_mm_item(self, idx):
         input_file = self.files[idx]
@@ -115,7 +73,6 @@ class DataBowl(Dataset):
 
         with open(input_file) as f:
             input_data = f.read().strip().split('\n')
-
 
         time_list, input_list = [], []
 
@@ -139,7 +96,7 @@ class DataBowl(Dataset):
             for _ in range(self.args.n_visit - len(input_list)):
                 # pad empty visit
                 vs = [0 for _ in range(self.args.input_size + 1)]
-                input_list = [vs ] + input_list
+                input_list = [vs] + input_list
                 time_list = [time_list[0]] + time_list
         else:
             if self.use_first_records:
@@ -148,7 +105,6 @@ class DataBowl(Dataset):
             else:
                 input_list = input_list[-self.args.n_visit:]
                 time_list = time_list[-self.args.n_visit:]
-
 
         if self.args.value_embedding == 'no' or self.args.use_ve == 0:
             input_list = np.array(input_list, dtype=np.float32)
@@ -161,7 +117,8 @@ class DataBowl(Dataset):
         else:
             input_list = input_list.transpose()
 
-        label = np.array([int(l) for l in self.label_dict[pid]], dtype=np.float32)
+        label = np.array([int(l)
+                          for l in self.label_dict[pid]], dtype=np.float32)
         # demo = np.array([self.demo_dict[pid] for _ in range(self.args.n_visit)], dtype=np.int64)
         demo = np.array(self.demo_dict.get(pid, 0), dtype=np.int64)
 
@@ -176,9 +133,8 @@ class DataBowl(Dataset):
         content = content[:12]
         content = np.array(content, dtype=np.float32)
         # content = np.mean(content, axis=0)
-        
-        return torch.from_numpy(input_list), torch.from_numpy(time_list), torch.from_numpy(demo), torch.from_numpy(content), torch.from_numpy(label), input_file
 
+        return torch.from_numpy(input_list), torch.from_numpy(time_list), torch.from_numpy(demo), torch.from_numpy(content), torch.from_numpy(label), input_file
 
     def __getitem__(self, idx):
         return self.get_mm_item(idx)
